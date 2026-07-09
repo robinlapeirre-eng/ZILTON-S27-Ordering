@@ -61,6 +61,7 @@ td,th{padding:0;}
 .emptyState h3{font-size:16px;font-weight:600;color:#999;margin-bottom:6px;}
 #toast{display:none;position:fixed;top:12px;right:12px;z-index:999;padding:7px 14px;border-radius:3px;font-size:12px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.2);}
 #odooModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;}
+#sendModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;}
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-thumb{background:#ccc;border-radius:2px;}
 #viewtabs{display:flex;gap:2px;padding:6px 12px 0;background:#fafafa;border-bottom:1px solid #e0e0e0;}
@@ -169,6 +170,22 @@ table.pltab tr:hover td{background:#fafcff;}
     <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;">
       <button id="odooCancel" class="btn" style="background:#f0f0f0;color:#555;">Annuleer</button>
       <button id="odooSend" class="btn btn-p">Order aanmaken in Odoo</button>
+    </div>
+  </div>
+</div>
+
+<div id="sendModal">
+  <div style="background:#fff;border-radius:6px;padding:28px 32px;width:460px;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Order klaar om te verzenden</div>
+    <div id="sendMeta" style="font-size:11px;color:#888;margin-bottom:18px;"></div>
+    <div style="font-size:12px;color:#555;margin-bottom:10px;">Download beide bestanden en voeg ze toe als bijlage in de e-mail:</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button id="dlPdf" class="btn" style="background:#1a5fa8;color:#fff;padding:10px 14px;text-align:left;font-size:12px;">&#8595; Bestelbon (PDF)<span id="dlPdfChk" style="float:right;"></span></button>
+      <button id="dlCsv" class="btn" style="background:#0D1F2D;color:#fff;padding:10px 14px;text-align:left;font-size:12px;">&#8595; CSV voor Odoo<span id="dlCsvChk" style="float:right;"></span></button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:22px;justify-content:space-between;align-items:center;">
+      <button id="sendClose" class="btn" style="background:#f0f0f0;color:#555;">Sluiten</button>
+      <button id="openMail" class="btn btn-p" style="padding:5px 20px;">&#9993; Open e-mail</button>
     </div>
   </div>
 </div>
@@ -780,15 +797,13 @@ document.getElementById("btnSend").addEventListener("click",function(){
 
   var meta=getOrderMeta();
 
-  // 1. Build and download CSV
+  // 1. Build CSV (download happens on an explicit click in the panel)
   var csv=buildCSV();
   if(!csv){notify("Geen aantallen ingevoerd",false);return;}
-  downloadBlob(csv.blob,csv.filename);
 
-  // 2. Build and download PDF
+  // 2. Build PDF
   var ordered=collectOrdered();
   var pdf=generatePDF(ordered);
-  downloadBlob(pdf.blob,pdf.filename);
 
   // 3. Compose totals for the email body
   var t=totalAll(),vkpTotal=0;
@@ -796,7 +811,7 @@ document.getElementById("btnSend").addEventListener("click",function(){
   var modelLines=[];
   MODEL_NAMES.forEach(function(m){var mt=modelSum(m);if(mt>0)modelLines.push("  - "+m+": "+mt+" st");});
 
-  // 4. Open email with prefilled subject and body
+  // 4. Prepare email with prefilled subject and body
   var subject="Nieuwe order - "+activeClient.name+" - "+meta.ref;
   var body=""
     +"Beste,\n\n"
@@ -810,16 +825,39 @@ document.getElementById("btnSend").addEventListener("click",function(){
     +"Gevraagde leverdatum: "+meta.delivdate+"\n\n"
     +"Modellen:\n"+modelLines.join("\n")+"\n\n"
     +"Totaal: "+t+" stuks - VKP EUR "+vkpTotal.toFixed(2)+"\n\n"
-    +"LET OP: voeg de zonet gedownloade bestanden (CSV + PDF) toe als bijlage voor je verzendt.\n\n"
+    +"LET OP: voeg de gedownloade bestanden (CSV + PDF) toe als bijlage voor je verzendt.\n\n"
     +"Met vriendelijke groeten";
 
   var mailto="mailto:customercare@lvfashion.be"
     +"?subject="+encodeURIComponent(subject)
     +"&body="+encodeURIComponent(body);
 
-  // Small delay so downloads start before mail client opens
-  setTimeout(function(){window.location.href=mailto;},600);
-  notify("CSV + PDF gedownload, mail wordt geopend");
+  // 5. Show the confirmation panel. Each file downloads on its own click,
+  //    so the browser never blocks a second automatic download.
+  SEND_STATE={csv:csv,pdf:pdf,mailto:mailto};
+  document.getElementById("sendMeta").textContent=activeClient.name+" \u00B7 "+meta.ref+" \u00B7 "+t+" stuks";
+  document.getElementById("dlPdfChk").innerHTML="";
+  document.getElementById("dlCsvChk").innerHTML="";
+  document.getElementById("sendModal").style.display="flex";
+});
+
+var SEND_STATE=null;
+document.getElementById("dlPdf").addEventListener("click",function(){
+  if(!SEND_STATE)return;
+  downloadBlob(SEND_STATE.pdf.blob,SEND_STATE.pdf.filename);
+  document.getElementById("dlPdfChk").innerHTML=" &#10003;";
+});
+document.getElementById("dlCsv").addEventListener("click",function(){
+  if(!SEND_STATE)return;
+  downloadBlob(SEND_STATE.csv.blob,SEND_STATE.csv.filename);
+  document.getElementById("dlCsvChk").innerHTML=" &#10003;";
+});
+document.getElementById("openMail").addEventListener("click",function(){
+  if(!SEND_STATE)return;
+  window.location.href=SEND_STATE.mailto;
+});
+document.getElementById("sendClose").addEventListener("click",function(){
+  document.getElementById("sendModal").style.display="none";
 });
 
 // ── PRIJSLIJST ────────────────────────────────────────────────────────────────
@@ -829,24 +867,42 @@ function eur(n){return "\u20AC"+n.toFixed(2);}
 
 // Stofsamenstelling per serie (= eerste getal in modelnaam). Gesorteerd op % aflopend.
 var COMP={
- 7:"92% CO \u00B7 6% EME \u00B7 2% EL", 8:"92% CO \u00B7 6% EME \u00B7 2% EL", 9:"92% CO \u00B7 6% EME \u00B7 2% EL",
  15:"98% CO \u00B7 2% EL", 16:"100% CO", 21:"97% CO \u00B7 3% EL", 22:"97% CO \u00B7 3% EL",
  23:"55% CO \u00B7 42% CLY \u00B7 3% EL", 24:"97% CO \u00B7 3% EL", 25:"99% CO \u00B7 1% EL",
  26:"98% CO \u00B7 2% EL", 27:"53% CLY \u00B7 46% CO \u00B7 1% EL", 28:"97% CO \u00B7 3% EL",
  29:"68% CO \u00B7 30% CLY \u00B7 2% EL", 30:"59% CO \u00B7 38% CLY \u00B7 3% EL",
- 37:"49% CO \u00B7 45% PA \u00B7 6% EL",
  40:"76% CO \u00B7 22% LI \u00B7 2% EL", 43:"51% LI \u00B7 24% CV \u00B7 24% PES \u00B7 1% EL",
  44:"49% CO \u00B7 49% LI \u00B7 2% EL", 50:"80% CO \u00B7 18% LI \u00B7 2% EL",
  70:"53% PES \u00B7 23% CV \u00B7 23% WO \u00B7 1% EL", 71:"65% PES \u00B7 32% CV \u00B7 3% EL",
  72:"99% CO \u00B7 1% EL", 73:"98% CO \u00B7 2% EL", 74:"99% CO \u00B7 1% EL", 75:"99% CO \u00B7 1% EL",
  76:"99% CO \u00B7 1% EL", 77:"99% CO \u00B7 1% EL", 78:"99% CO \u00B7 1% EL"
 };
-var COMP_FLAG={}; // geen te controleren series meer
+var COMP_FLAG={37:true}; // bron = 145% (CO dubbel), te controleren
 function serieOf(name){var m=name.match(/\b(\d{1,3})\b/);return m?parseInt(m[1],10):null;}
 function compHtml(m){
   var s=serieOf(m);
   if(COMP_FLAG[s])return "<span class='pltbd'>serie "+s+": controleren</span>";
   if(s!==null&&COMP[s])return "<span class='plcomp'>"+COMP[s]+"</span>";
+  return "<span style='color:#ccc;'>&mdash;</span>";
+}
+
+// Stofgewicht per serienummer (waarde + eenheid, exact zoals aangeleverd).
+var WEIGHT={
+ 7:[10,"oz"], 8:[10,"oz"], 9:[10,"oz"],
+ 15:[490,"g"], 16:[11.25,"oz"], 17:[11.25,"oz"],
+ 21:[275,"g"], 22:[320,"g"], 23:[335,"g"], 24:[305,"g"], 25:[280,"g"],
+ 26:[285,"g"], 27:[320,"g"], 28:[375,"g"], 29:[330,"g"], 30:[340,"g"],
+ 37:[290,"g"], 40:[330,"g"], 43:[310,"g"], 44:[320,"g"], 50:[355,"g"],
+ 70:[320,"g"], 71:[280,"g"], 72:[230,"g"], 73:[230,"g"], 74:[260,"g"],
+ 75:[260,"g"], 77:[225,"g"], 78:[290,"g"]
+};
+function weightHtml(m){
+  var s=serieOf(m);
+  if(s!==null&&WEIGHT[s]){
+    var w=WEIGHT[s];
+    var v=(w[0]%1===0)?String(w[0]):String(w[0]).replace(".",",");
+    return "<span style='color:#444;'>"+v+" "+w[1]+"</span>";
+  }
   return "<span style='color:#ccc;'>&mdash;</span>";
 }
 
@@ -867,12 +923,13 @@ function renderPricelist(){
   var h="<table class='pltab'><thead><tr>"
     +"<th>Model</th>"
     +"<th>Samenstelling</th>"
+    +"<th style='text-align:right;'>Gewicht</th>"
     +"<th style='text-align:right;'>Kleuren</th>"
     +"<th style='text-align:right;'>VKP (inkoop)</th>"
     +"<th style='text-align:right;'>Retail (advies)</th>"
     +(showMargin?"<th style='text-align:right;'>Marge (&times;)</th>":"")
     +"</tr></thead><tbody>";
-  var colspan=showMargin?6:5;
+  var colspan=showMargin?7:6;
   var shown=0;
   cats.forEach(function(c){
     if(PL_CAT!=="all"&&PL_CAT!==c)return;
@@ -881,7 +938,7 @@ function renderPricelist(){
     rows.forEach(function(m){
       var d=DATA[m], has=d.vkp>0&&d.retail>0;
       var ncol=Object.keys(d.colors||{}).length;
-      h+="<tr><td class='plmodel'>"+m+"</td><td>"+compHtml(m)+"</td><td class='num plclr'>"+ncol+"</td>";
+      h+="<tr><td class='plmodel'>"+m+"</td><td>"+compHtml(m)+"</td><td class='num'>"+weightHtml(m)+"</td><td class='num plclr'>"+ncol+"</td>";
       if(has){
         h+="<td class='num plvkp'>"+eur(d.vkp)+"</td><td class='num plretail'>"+eur(d.retail)+"</td>";
         if(showMargin){var mg=d.retail/d.vkp;h+="<td class='num plmargin'>"+mg.toFixed(2).replace(".",",")+"</td>";}
